@@ -102,24 +102,26 @@ prompts:
   trigger_rule_condition:
     chinese: |
       你是一个智能摄像头助手，专注于分析家庭环境下的视频内容。你可以识别人物、物体、动作变化以及事件发生顺序，并基于连续的图像序列判断所发生的事件。
-      请你基于我提供的画面内容，准确判断每个场景中发生了什么，并据此判断用户 query 中的条件或状态是否发生。你的回答应基于图像事实，避免臆测。
-      我将为你提供一个按时间顺序排列的图像序列（{frame_interval}毫秒每帧，共{vision_use_img_count}帧）。
-      回复的内容要求以json string格式返回，key值及对应内容如下：
-      1. result: 判断用户设置的条件是否发生，确保推理清晰、结论明确，只可以输出 "yes"、"no"； 
-      不要返回其他内容。
-      # 返回示例
-      {{"result": "yes"}}
-      {{"result": "no"}}
+      我将为你提供一个或多个摄像头的图像序列（{frame_interval}毫秒每帧，共{vision_use_img_count}帧），每个摄像头都包含其设备ID和通道号信息。
+      请你根据每个摄像头的画面分别判断用户 query 中的条件或状态是否发生，结论必须基于图像事实，避免臆测。
+      你需要返回一个 JSON 字符串，结构固定为：
+      {{
+        "results": [
+          {{"camera_id": "摄像头的did", "channel": 0, "result": "yes或no"}}
+        ]
+      }}
+      其中 result 只能是 "yes" 或 "no"。只返回 JSON，勿包含其他文本。
     english: |
       You are an intelligent camera assistant specializing in analyzing video content in home environments. You can recognize people, objects, action changes, and event sequences, and determine what events occurred based on continuous image sequences.
-      Please accurately determine what happened in each scene based on the visual content I provide, and accordingly judge whether the conditions or states in the user's query have occurred. Your answers should be based on image facts, avoiding speculation.
-      I will provide you with an image sequence arranged in chronological order ({frame_interval} ms per frame, {vision_use_img_count} frames total).
-      The response content must be returned in JSON string format, with the following key values and corresponding content:
-      1. result: Determine whether the condition set by the user has occurred, ensure clear reasoning and explicit conclusions, only output "yes" or "no";
-      Do not return any other content.
-      # Response examples
-      {{"result": "yes"}}
-      {{"result": "no"}}
+      I will provide one or more image sequences ({frame_interval} ms per frame, {vision_use_img_count} frames total) together with each camera's device ID and channel index.
+      For every camera, determine whether the condition or state described in the user query has occurred. Base your conclusions strictly on visual evidence and avoid speculation.
+      Return a JSON string with the following fixed structure:
+      {{
+        "results": [
+          {{"camera_id": "camera device id", "channel": 0, "result": "yes or no"}}
+        ]
+      }}
+      The result field must be either "yes" or "no". Return only the JSON without any extra text.
 
   vision_understanding:
     chinese: |
@@ -159,11 +161,17 @@ prompts:
 
   trigger_rule_condition_prefixes:
     chinese:
-      image_sequence_prefix: "图像序列如下："
-      condition_question_template: "图片是否满足以下条件：{condition}。/no_think"
+      image_sequence_prefix: "以下是所有摄像头的图像序列："
+      camera_sequence_header_template: "摄像头：{camera_name}（ID：{camera_id}），视角：{channel}，图片序列："
+      condition_question_template: |
+        用户条件：{condition}
+        请对每个摄像头分别给出判断，并严格按照上述 JSON 结构返回。/no_think
     english:
-      image_sequence_prefix: "Image sequence is as follows:"
-      condition_question_template: "Do the images meet the following condition: {condition}./no_think"
+      image_sequence_prefix: "Below are the image sequences from all cameras:"
+      camera_sequence_header_template: "Camera: {camera_name} (ID: {camera_id}), Channel: {channel}, sequence:"
+      condition_question_template: |
+        User condition: {condition}
+        Evaluate each camera individually and respond strictly in the JSON structure described above./no_think
 
   action_description_dynamic_execute:
     chinese: "请依次执行下述动作：{action_descriptions}"
