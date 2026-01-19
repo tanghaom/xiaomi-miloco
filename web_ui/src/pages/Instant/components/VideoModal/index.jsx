@@ -3,11 +3,19 @@
  * This software may be used and distributed according to the terms of the Xiaomi Miloco License Agreement.
  */
 
-import React, { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Modal } from 'antd'
 import { useTranslation } from 'react-i18next'
 import { Icon } from '@/components';
 import styles from './index.module.less'
+
+const DEFAULT_VIEWPORT = { width: 1280, height: 720 }
+const readViewportSize = () => {
+  if (typeof window === 'undefined') {
+    return DEFAULT_VIEWPORT
+  }
+  return { width: window.innerWidth, height: window.innerHeight }
+}
 
 /**
  * VideoModal Component - Video playback modal with canvas content synchronization
@@ -35,6 +43,34 @@ const VideoModal = ({
   const modalCanvasRef = useRef(null)
   const animationFrameRef = useRef(null)
   const { t } = useTranslation()
+  const [viewport, setViewport] = useState(readViewportSize)
+  // 简单判断是否为移动端，用于控制 Modal 全屏展示，避免视频内容超出视口
+  const isMobile = viewport.width <= 768
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined
+    }
+    const handleResize = () => {
+      setViewport(prev => {
+        const next = readViewportSize()
+        if (prev.width === next.width && prev.height === next.height) {
+          return prev
+        }
+        return next
+      })
+    }
+    window.addEventListener('resize', handleResize)
+    return () => {
+      window.removeEventListener('resize', handleResize)
+    }
+  }, [])
+
+  // 根据当前视口动态计算桌面端弹窗和画布的可用尺寸，提升观感
+  const availableWidth = Math.max(viewport.width - 80, 480)
+  const desktopModalWidth = Math.min(availableWidth, 1920)
+  const desktopBodyMaxHeight = Math.min(Math.max(viewport.height - 120, 480), 1080)
+  const desktopCanvasMaxHeight = Math.max(desktopBodyMaxHeight - 40, 360)
 
   // copy canvas content to canvas in Modal
   const copyCanvasContent = useCallback(() => {
@@ -108,23 +144,46 @@ const VideoModal = ({
     onClose && onClose()
   }, [onClose])
 
+  const modalWidth = isMobile ? '100%' : desktopModalWidth
+  const modalStyle = isMobile
+    ? {
+        maxWidth: '100%',
+        width: '100%',
+        top: 0,
+        padding: 0
+      }
+    : {
+        maxWidth: 'calc(100vw - 64px)',
+        width: 'auto',
+        top: 20,
+        padding: 0
+      }
+
+  const modalBodyStyle = isMobile
+    ? {
+        padding: 0,
+        background: '#000',
+        borderRadius: 0,
+        overflow: 'hidden',
+        height: '100vh'
+      }
+    : {
+        padding: 0,
+        background: '#000',
+        borderRadius: '8px',
+        overflow: 'hidden',
+        maxHeight: desktopBodyMaxHeight
+      }
+  const canvasMaxHeight = isMobile ? '100vh' : `${desktopCanvasMaxHeight}px`
+
   return (
     <Modal
       open={visible}
       onCancel={handleClose}
       footer={null}
-      style={{
-        maxWidth: '1400px',
-        top: '20px',
-        padding: 0,
-
-      }}
-      bodyStyle={{
-        padding: 0,
-        background: '#000',
-        borderRadius: '8px',
-        overflow: 'hidden'
-      }}
+      width={modalWidth}
+      style={modalStyle}
+      bodyStyle={modalBodyStyle}
       destroyOnClose={true}
       closable={false}
       maskClosable={true}
@@ -133,13 +192,16 @@ const VideoModal = ({
         mask: { backgroundColor: 'rgba(0, 0, 0, 0.8)' }
       }}
       className={styles.contentModal}
-      width={848}
     >
       <div className={styles.videoModalContainer}>
         <div className={styles.videoArea}>
           <canvas
             ref={modalCanvasRef}
             style={{
+              width: '100%',
+              height: 'auto',
+              /* 限制最大高度，移动端使用视口高度，桌面端保留一定边距 */
+              maxHeight: canvasMaxHeight,
               borderRadius: '8px',
               objectFit: 'contain',
               background: '#000'

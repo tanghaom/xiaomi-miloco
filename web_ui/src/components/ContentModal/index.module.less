@@ -28,7 +28,19 @@
 
 .content {
   background-color: #fff;
+  /* 默认桌面宽度 */
   width: 420px;
   padding: 30px;
   border-radius: 24px;
 }
+
+/* 移动端登录弹层适配：使用百分比宽度并减小内边距，避免左右被裁切 */
+@media (max-width: 480px) {
+  .content {
+    width: calc(100% - 32px);
+    max-width: 420px;
+    padding: 20px 16px;
+    border-radius: 16px;
+  }
+}
+

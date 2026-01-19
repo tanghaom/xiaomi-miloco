@@ -41,3 +41,12 @@
   width: 100%;
   height: 100%;
 }
+
+/* 移动端栅格布局优化：单列展示，减小间距和内边距，提升可读性 */
+@media (max-width: 768px) {
+  .gridContainer {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    padding: 0 12px 32px;
+  }
+}

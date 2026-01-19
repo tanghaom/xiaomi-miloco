@@ -24,6 +24,7 @@ from miloco_server.controller import (
     mcp_router,
     miot_router,
     model_router,
+    public_router,
     trigger_router,
     web_router,
 )
@@ -61,6 +62,7 @@ app.include_router(chat_router, prefix="/api")
 app.include_router(trigger_router, prefix="/api")
 app.include_router(model_router, prefix="/api")
 app.include_router(mcp_router, prefix="/api")
+app.include_router(public_router, prefix="/public")
 
 
 @app.get("/{full_path:path}")

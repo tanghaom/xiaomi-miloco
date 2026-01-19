@@ -408,6 +408,8 @@ export default {
     pleaseLogin: 'Please log in to your account',
     inputPin: 'Enter login code (6 digits)',
     login: 'Login',
+    turnstileRequired: 'Please complete the verification',
+    turnstileError: 'Verification failed, please try again',
 
     pinLength: 'Login code must be 6 digits',
     pinNotMatch: 'The two entered login codes do not match',

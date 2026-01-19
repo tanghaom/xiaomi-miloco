@@ -9,6 +9,39 @@ import { useTranslation } from 'react-i18next';
 import { isFirefox, sleep } from '@/utils/util';
 import DefaultCameraBg from '@/assets/images/default-camera-bg.png'
 
+const H264_KEY_TYPES = [5]
+const H264_CONFIG_TYPES = [7, 8]
+const H265_KEY_TYPES = [16, 17, 18, 19, 20]
+const H265_CONFIG_TYPES = [32, 33, 34]
+
+/**
+ * 遍历 Annex-B NAL 起始码并返回第一个匹配的编码信息
+ * Iterate over Annex-B NAL start codes and read NAL metadata.
+ */
+const walkAnnexBNals = (data, onNal) => {
+  let i = 0
+  while (i < data.length - 4) {
+    const hasLongStartCode = data[i] === 0x00 && data[i + 1] === 0x00 && data[i + 2] === 0x00 && data[i + 3] === 0x01
+    const hasShortStartCode = data[i] === 0x00 && data[i + 1] === 0x00 && data[i + 2] === 0x01
+    if (hasLongStartCode || hasShortStartCode) {
+      const nalStart = hasLongStartCode ? i + 4 : i + 3
+      if (nalStart >= data.length) {
+        break
+      }
+      onNal(nalStart)
+      i = nalStart
+      continue
+    }
+    i += 1
+  }
+}
+
+const isHevcCodec = codec => {
+  if (!codec) {return false}
+  const lower = codec.toLowerCase()
+  return lower.startsWith('hvc1') || lower.startsWith('hev1') || lower.includes('h265') || lower.includes('hevc')
+}
+
 /**
  * Detect video codec from binary data
  * 从二进制数据中检测视频编码格式
@@ -17,21 +50,44 @@ import DefaultCameraBg from '@/assets/images/default-camera-bg.png'
  * @returns {string} Detected codec type ('h264', 'h265', or 'unknown')
  */
 const detectCodec = (data) => {
-  let i = 0;
-  while (i < data.length - 6) {
-    if (
-      data[i] === 0x00 && data[i + 1] === 0x00 &&
-      ((data[i + 2] === 0x00 && data[i + 3] === 0x01) || data[i + 2] === 0x01)
-    ) {
-      const nalStart = data[i + 2] === 0x01 ? i + 3 : i + 4;
-      const h264Type = data[nalStart] & 0x1f;
-      const h265Type = (data[nalStart] >> 1) & 0x3f;
-      if ([5, 7, 8].includes(h264Type)) {return 'h264';}
-      if ([32, 33, 34, 19, 20].includes(h265Type)) {return 'h265';}
+  let detected = 'unknown'
+  walkAnnexBNals(data, nalStart => {
+    const h264Type = data[nalStart] & 0x1f
+    const h265Type = (data[nalStart] >> 1) & 0x3f
+    if ([5, 7, 8].includes(h264Type)) {
+      detected = 'h264'
+      return
     }
-    i++;
+    if ([32, 33, 34, 19, 20].includes(h265Type)) {
+      detected = 'h265'
+    }
+  })
+  return detected
+}
+
+/**
+ * 解析当前帧数据中是否包含关键帧或参数集（SPS/PPS、VPS/SPS/PPS）
+ * Analyze current chunk for key-frame slices or codec parameter sets
+ */
+const analyzeEncodedChunk = (data, codec) => {
+  const keyTypes = isHevcCodec(codec) ? H265_KEY_TYPES : H264_KEY_TYPES
+  const configTypes = isHevcCodec(codec) ? H265_CONFIG_TYPES : H264_CONFIG_TYPES
+  const result = {
+    isKeyFrame: false,
+    hasConfigNal: false,
   }
-  return 'unknown';
+  walkAnnexBNals(data, nalStart => {
+    const nalType = isHevcCodec(codec)
+      ? (data[nalStart] >> 1) & 0x3f
+      : data[nalStart] & 0x1f
+    if (keyTypes.includes(nalType)) {
+      result.isKeyFrame = true
+    }
+    if (configTypes.includes(nalType)) {
+      result.hasConfigNal = true
+    }
+  })
+  return result
 }
 
 /**
@@ -47,7 +103,19 @@ const detectCodec = (data) => {
  * @param {Function} [props.onCanvasRef] - Canvas ref callback function
  * @returns {JSX.Element} Video player component
  */
-const VideoPlayer = ({ codec = 'avc1.42E01E', poster, style, cameraId, channel, onCanvasRef, onPlay }) => {
+const DEFAULT_CODECS = {
+  h264: 'avc3.42E01E',
+  h265: 'hev1.1.6.L93.B0',
+}
+
+const normalizeAnnexBCodec = codec => {
+  if (!codec) {return DEFAULT_CODECS.h264}
+  if (codec.startsWith('avc1')) {return codec.replace('avc1', 'avc3')}
+  if (codec.startsWith('hvc1')) {return codec.replace('hvc1', 'hev1')}
+  return codec
+}
+
+const VideoPlayer = ({ codec = DEFAULT_CODECS.h264, poster, style, cameraId, channel, onCanvasRef, onPlay }) => {
   const { t } = useTranslation();
   const canvasRef = useRef(null)
   const wsRef = useRef(null)
@@ -105,40 +173,7 @@ const VideoPlayer = ({ codec = 'avc1.42E01E', poster, style, cameraId, channel, 
    * @param {string} codec - Video codec format
    * @returns {boolean} Whether the data is a key frame
    */
-  const isKeyFrame = (data, codec) => {
-    if (codec.startsWith('avc1') || codec.startsWith('h264')) {
-      // H264
-      let i = 0;
-      while (i < data.length - 4) {
-        if (
-          data[i] === 0x00 && data[i + 1] === 0x00 &&
-          ((data[i + 2] === 0x00 && data[i + 3] === 0x01) || data[i + 2] === 0x01)
-        ) {
-          const nalUnitType = data[i + 2] === 0x01 ? data[i + 3] & 0x1f : data[i + 4] & 0x1f;
-          return nalUnitType === 5;
-        }
-        i++;
-      }
-      return false;
-    } else if (codec.startsWith('hvc1') || codec.startsWith('hev1') || codec.startsWith('h265')) {
-      // H265/HEVC
-      let i = 0;
-      while (i < data.length - 6) {
-        if (
-          data[i] === 0x00 && data[i + 1] === 0x00 &&
-          ((data[i + 2] === 0x00 && data[i + 3] === 0x01) || data[i + 2] === 0x01)
-        ) {
-          const nalStart = data[i + 2] === 0x01 ? i + 3 : i + 4;
-          const nalUnitType = (data[nalStart] >> 1) & 0x3f;
-          if ([16, 17, 18, 19, 20].includes(nalUnitType)) {return true;}
-        }
-        i++;
-      }
-      return false;
-    }
-    // default to handle key frame
-    return true;
-  }
+  const isKeyFrame = (data, codec) => analyzeEncodedChunk(data, codec).isKeyFrame
 
   useEffect(() => {
     if (onCanvasRef && canvasRef.current) {
@@ -182,6 +217,7 @@ const VideoPlayer = ({ codec = 'avc1.42E01E', poster, style, cameraId, channel, 
         }
         decoderRef.current = null;
       }
+      setAutoCodec(null)
       const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
       const wsUrl = `${wsProtocol}://${window.location.host}${import.meta.env.VITE_API_BASE || ''}/api/miot/ws/video_stream?camera_id=${encodeURIComponent(cameraId)}&channel=${encodeURIComponent(channel)}`
       setLoading(true)
@@ -192,7 +228,7 @@ const VideoPlayer = ({ codec = 'avc1.42E01E', poster, style, cameraId, channel, 
       const ctx = canvas.getContext('2d')
       await sleep(1000)
 
-      // here assume wsUrl pushes H264 AnnexB format
+      // here assume wsUrl pushes H264/H265 AnnexB format
       wsRef.current = new window.WebSocket(wsUrl)
       wsRef.current.binaryType = 'arraybuffer'
 
@@ -219,30 +255,49 @@ const VideoPlayer = ({ codec = 'avc1.42E01E', poster, style, cameraId, channel, 
 
       decoderRef.current = new window.VideoDecoder({
         output: frame => {
-          createImageBitmap(frame).then(bitmap => {
-            canvas.width = frame.codedWidth
-            canvas.height = frame.codedHeight
-            ctx.drawImage(bitmap, 0, 0)
-            frame.close()
-            bitmap.close && bitmap.close()
-            if (!ready) {
-              setLoading(false)
-              setShow(true)
-              if (onCanvasRef && canvasRef.current) {
-                onCanvasRef(canvasRef)
-              }
-              // handleReady()
-              ready = true
-            }
+          const rect = frame.visibleRect || {
+            x: 0,
+            y: 0,
+            width: frame.codedWidth,
+            height: frame.codedHeight,
+          }
+          const displayWidth = frame.codedWidth;
+          const displayHeight = frame.codedHeight;
+          const renderWidth = displayWidth
+          const renderHeight = displayHeight
+
+          canvas.width = renderWidth;
+          canvas.height = renderHeight;
+
+          const normalizedFrame = new window.VideoFrame(frame, {
+            visibleRect: { x: 0, y: 0, width: displayWidth, height: displayHeight },
+            displayWidth,
+            displayHeight,
           })
+          frame.close();
+
+          ctx.drawImage(normalizedFrame, 0, 0, renderWidth, renderHeight);
+          normalizedFrame.close();
+
+          if (!ready) {
+            setLoading(false);
+            setShow(true);
+            if (onCanvasRef && canvasRef.current) {
+              onCanvasRef(canvasRef);
+            }
+            // handleReady()
+            ready = true;
+          }
         },
         error: () => {
           setError(t('instant.deviceList.deviceDecodeFailed'))
           message.error(t('instant.deviceList.deviceDecodeFailed'))
         }
       })
+      // 仍然使用传入的 codec 配置解码器，保持与原始实现一致
+      const baseCodec = normalizeAnnexBCodec(codec)
       decoderRef.current.configure({
-        codec,
+        codec: baseCodec,
         hardwareAcceleration: 'prefer-hardware',
       })
       wsRef.current.onmessage = e => {
@@ -251,19 +306,20 @@ const VideoPlayer = ({ codec = 'avc1.42E01E', poster, style, cameraId, channel, 
           if (!autoCodec) {
             const detected = detectCodec(uint8);
             if (detected !== 'unknown') {
-              setAutoCodec(detected === 'h264' ? 'avc1.42E01E' : 'hvc1.1.6.L93.B0');
+              setAutoCodec(detected === 'h264' ? DEFAULT_CODECS.h264 : DEFAULT_CODECS.h265);
             }
           }
-          const useCodec = autoCodec || codec;
+          const useCodec = autoCodec || baseCodec;
           if (decoderRef.current._waitForKeyFrame === undefined) {
             decoderRef.current._waitForKeyFrame = true;
           }
-          const isKey = isKeyFrame(uint8, useCodec);
+          const { isKeyFrame: isKey, hasConfigNal } = analyzeEncodedChunk(uint8, useCodec);
 
           if (decoderRef.current._waitForKeyFrame) {
-            if (!isKey) {
+            if (!isKey && !hasConfigNal) {
               return;
-            } else {
+            }
+            if (isKey) {
               decoderRef.current._waitForKeyFrame = false;
             }
           }

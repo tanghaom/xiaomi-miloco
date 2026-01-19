@@ -12,7 +12,14 @@ from typing import Callable, Coroutine, Optional
 
 from pydantic_core import to_jsonable_python
 from miot.client import MIoTClient
-from miot.types import MIoTOauthInfo, MIoTCameraInfo, MIoTDeviceInfo, MIoTManualSceneInfo, MIoTUserInfo
+from miot.types import (
+    MIoTCameraInfo,
+    MIoTCameraVideoQuality,
+    MIoTDeviceInfo,
+    MIoTManualSceneInfo,
+    MIoTOauthInfo,
+    MIoTUserInfo,
+)
 from miot.camera import MIoTCameraInstance
 
 from miloco_server.config import MIOT_CACHE_DIR, CAMERA_CONFIG
@@ -175,7 +182,11 @@ class MiotProxy:
     async def _create_camera_img_manager(self, camera_info: MIoTCameraInfo) -> CameraVisionHandler | None:
         camera_instance = await self._get_camera_instance(camera_info)
         if camera_instance is not None:
-            await camera_instance.start_async(enable_reconnect=True)
+            # 使用高画质码流进行实时预览，避免默认低清导致的画面模糊
+            await camera_instance.start_async(
+                qualities=MIoTCameraVideoQuality.HIGH,
+                enable_reconnect=True,
+            )
             camera_img_manager = CameraVisionHandler(
                 camera_info, camera_instance, max_size=self._camera_img_cache_max_size, ttl=self._camera_img_cache_ttl
             )

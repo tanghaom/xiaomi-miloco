@@ -5,14 +5,20 @@
 Xiaomi IoT controller
 Handles Xiaomi IoT device login, authorization, and device management
 """
+import asyncio
 import logging
 import os
+import re
 from collections import OrderedDict
+from contextlib import suppress
 from datetime import datetime
+from pathlib import Path
 from typing import Dict, Optional
+
 from fastapi import APIRouter, Depends, WebSocket
 from fastapi.responses import HTMLResponse
 from fastapi.websockets import WebSocketDisconnect, WebSocketState
+from pydantic import BaseModel, Field
 
 from miloco_server.middleware import (
     verify_token,
@@ -21,12 +27,128 @@ from miloco_server.middleware import (
 from miloco_server.middleware import MiotServiceException, ResourceNotFoundException
 from miloco_server.schema.common_schema import NormalResponse
 from miloco_server.service.manager import get_manager
+from miloco_server.config import STORAGE_DIR
 
 logger = logging.getLogger(name=__name__)
 
 router = APIRouter(prefix="/miot", tags=["Xiaomi IoT"])
 
 manager = get_manager()
+RAW_DUMP_ROOT = STORAGE_DIR / "debug" / "raw_stream"
+
+
+def _sanitize_name(value: str) -> str:
+    """Make camera id safe for filesystem usage."""
+    return re.sub(r"[^0-9A-Za-z._-]", "_", value)
+
+
+class RawVideoDumpSession:
+    """Represent a single raw video dump session."""
+
+    def __init__(self, camera_id: str, channel: int, base_dir: Path, max_bytes: int):
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_id = _sanitize_name(camera_id)
+        self.file_path = base_dir / f"{safe_id}_ch{channel}_{timestamp}.h26x"
+        self.file_path.parent.mkdir(parents=True, exist_ok=True)
+        self._file = self.file_path.open("wb")
+        self.max_bytes = max_bytes
+        self.bytes_written = 0
+        self.finished = False
+        self.close_reason = "timeout"
+        self._event = asyncio.Event()
+
+    def write(self, payload: bytes) -> None:
+        if self.finished:
+            return
+        self._file.write(payload)
+        self.bytes_written += len(payload)
+        if self.bytes_written >= self.max_bytes:
+            self.finish(reason="max_bytes")
+
+    async def wait_finished(self) -> None:
+        await self._event.wait()
+
+    async def auto_close_after(self, seconds: int) -> None:
+        try:
+            await asyncio.sleep(seconds)
+        finally:
+            if not self.finished:
+                self.finish("timeout")
+
+    def finish(self, reason: str = "timeout") -> None:
+        if self.finished:
+            return
+        self.close_reason = reason
+        self.finished = True
+        if not self._file.closed:
+            self._file.flush()
+            self._file.close()
+        self._event.set()
+
+
+class RawVideoDumpManager:
+    """Manage raw video dump sessions for troubleshooting."""
+
+    def __init__(self, base_dir: Path):
+        self._base_dir = base_dir
+        self._base_dir.mkdir(parents=True, exist_ok=True)
+        self._lock = asyncio.Lock()
+
+    async def capture_once(
+        self,
+        miot_service,
+        camera_id: str,
+        channel: int,
+        duration_seconds: int = 5,
+        max_bytes: int = 4 * 1024 * 1024,
+    ) -> tuple[Path, int, str, int]:
+        safe_duration = max(1, min(duration_seconds, 30))
+        byte_limit = max(1024, min(max_bytes, 20 * 1024 * 1024))
+        async with self._lock:
+            session = RawVideoDumpSession(camera_id, channel, self._base_dir, byte_limit)
+            timeout_task = asyncio.create_task(session.auto_close_after(safe_duration))
+
+            async def _raw_callback(did: str, data: bytes, ts: int, seq: int, ch: int) -> None:
+                if session.finished:
+                    return
+                session.write(data)
+
+            stream_started = False
+            try:
+                await miot_service.start_video_stream(camera_id, channel, _raw_callback)
+                stream_started = True
+                await session.wait_finished()
+            finally:
+                timeout_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await timeout_task
+                if stream_started:
+                    await miot_service.stop_video_stream(camera_id, channel)
+                if not session.finished:
+                    session.finish("stopped")
+            return session.file_path, session.bytes_written, session.close_reason, safe_duration
+
+
+raw_video_dump_manager = RawVideoDumpManager(RAW_DUMP_ROOT)
+
+
+class RawDumpRequest(BaseModel):
+    """Request body for raw stream dump."""
+
+    camera_id: str = Field(description="Camera device ID (did)")
+    channel: int = Field(default=0, ge=0, description="Camera channel")
+    duration_seconds: int = Field(
+        default=5,
+        ge=1,
+        le=30,
+        description="Capture duration in seconds (1-30)",
+    )
+    max_bytes: int = Field(
+        default=4 * 1024 * 1024,
+        ge=1024,
+        le=20 * 1024 * 1024,
+        description="Maximum bytes to write (1KB-20MB)",
+    )
 
 
 @router.get("/xiaomi_home_callback", summary="Xiaomi Home authorization callback", response_class=HTMLResponse)
@@ -198,6 +320,35 @@ async def refresh_miot_user_info(current_user: str = Depends(verify_token)):
         code=0,
         message="MiOT user information refreshed successfully",
         data=result
+    )
+
+
+@router.post(
+    path="/debug/raw_dump",
+    summary="Dump raw camera stream for debugging",
+    response_model=NormalResponse,
+)
+async def dump_raw_camera_stream(
+    req: RawDumpRequest,
+    current_user: str = Depends(verify_token),
+):
+    """Dump raw H264/H265 data to a file for troubleshooting."""
+    file_path, byte_count, reason, used_duration = await raw_video_dump_manager.capture_once(
+        manager.miot_service,
+        camera_id=req.camera_id,
+        channel=req.channel,
+        duration_seconds=req.duration_seconds,
+        max_bytes=req.max_bytes,
+    )
+    return NormalResponse(
+        code=0,
+        message="Raw video stream dumped successfully",
+        data={
+            "file_path": str(file_path),
+            "bytes": byte_count,
+            "stop_reason": reason,
+            "duration_seconds": used_duration,
+        },
     )
 
 

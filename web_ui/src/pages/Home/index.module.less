@@ -106,7 +106,8 @@
   }
 }
 .homeLayout {
-  min-width: 800px;
+  /* 默认不限制最小宽度，避免小屏设备出现横向滚动 */
+  min-width: 0;
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -124,6 +125,14 @@
     position: relative;
   }
 }
+
+/* 大屏设备下保持原有的最小内容宽度，保证桌面端视觉效果 */
+@media (min-width: 1024px) {
+  .homeLayout {
+    min-width: 800px;
+  }
+}
+
 
 
 

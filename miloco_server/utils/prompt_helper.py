@@ -16,35 +16,52 @@ class TriggerRuleConditionPromptBuilder:
 
     @staticmethod
     def build_trigger_rule_prompt(
-        img_seq: CameraImgSeq,
+        camera_img_seqs: list[CameraImgSeq],
         condition: str,
         language: UserLanguage = UserLanguage.CHINESE
     ) -> ChatHistoryMessages:
+        """
+        构造触发规则判断提示词，支持一次传入多个摄像头的图像序列。
+        """
+        if not camera_img_seqs:
+            raise ValueError("camera_img_seqs cannot be empty")
+
         chat_history_messages = ChatHistoryMessages()
 
-        img_seq_base64 = img_seq.to_base64()
-
-        # Get system prompt from config
+        # System prompt
         system_prompt = PromptConfig.get_prompt(PromptType.TRIGGER_RULE_CONDITION, language)
         chat_history_messages.add_content("system", system_prompt)
 
-        # Get user content prefixes from config
         prefixes = PromptConfig.get_trigger_rule_condition_prefixes(language)
-
-        user_content = []
-
-        user_content.append({
+        user_content = [{
             "type": "text",
             "text": prefixes["image_sequence_prefix"]
-        })
+        }]
 
-        for image_data in img_seq_base64.img_list:
+        header_template = prefixes.get(
+            "camera_sequence_header_template",
+            "Camera: {camera_name} (ID: {camera_id}), Channel: {channel}, sequence:"
+        )
+
+        for img_seq in camera_img_seqs:
+            img_seq_base64 = img_seq.to_base64()
             user_content.append({
-                "type": "image_url",
-                "image_url": {
-                    "url": image_data.data
-                }
+                "type": "text",
+                "text": header_template.format(
+                    camera_name=img_seq_base64.camera_info.name,
+                    camera_id=img_seq_base64.camera_info.did,
+                    channel=img_seq_base64.channel
+                )
             })
+
+            for image_data in img_seq_base64.img_list:
+                user_content.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": image_data.data
+                    }
+                })
+
         user_content.append({
             "type": "text",
             "text": prefixes["condition_question_template"].format(condition=condition)

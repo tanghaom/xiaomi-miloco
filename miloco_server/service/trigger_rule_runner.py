@@ -8,6 +8,7 @@ Handles trigger-related business logic and data validation
 
 import json
 import time
+from datetime import datetime
 from typing import Callable, List, Dict, Optional
 import asyncio
 import logging
@@ -23,7 +24,7 @@ from miloco_server.dao.trigger_rule_log_dao import TriggerRuleLogDAO
 from miloco_server.mcp.tool_executor import ToolExecutor
 from miloco_server.proxy.llm_proxy import LLMProxy
 from miloco_server.proxy.miot_proxy import MiotProxy
-from miloco_server.schema.miot_schema import CameraImgPathSeq, CameraImgSeq, CameraInfo
+from miloco_server.schema.miot_schema import CameraImgInfoPath, CameraImgPathSeq, CameraImgSeq, CameraInfo
 from miloco_server.schema.trigger_log_schema import (
     AiRecommendDynamicExecuteResult, TriggerConditionResult, ActionExecuteResult,
     TriggerRuleLog, NotifyResult, ExecuteResult
@@ -36,6 +37,7 @@ from miloco_server.utils.local_models import ModelPurpose
 from miloco_server.utils.normal_util import extract_json_from_content
 from miloco_server.utils.prompt_helper import TriggerRuleConditionPromptBuilder
 from miloco_server.utils.trigger_filter import trigger_filter
+from miloco_server.utils.trigger_variable import TriggerVariableContext, substitute_action_input
 from service import trigger_rule_dynamic_executor_cache
 from service.trigger_rule_dynamic_executor import START, TriggerRuleDynamicExecutor
 
@@ -194,37 +196,56 @@ class TriggerRuleRunner:
 
             if execable and not is_dynamic_action_running:
                 execute_id = str(uuid.uuid4())
+                # Store images first and create variable context
+                trigger_images = await self._store_trigger_images(
+                    condition_result_list, camera_motion_dict)
+                variable_context = TriggerVariableContext(
+                    rule_name=rule.name,
+                    trigger_time=datetime.fromtimestamp(start_time / 1000),
+                    trigger_images=trigger_images,
+                    condition=rule.condition,
+                )
                 execute_result = await self._execute_trigger_action(
-                    execute_id, rule, camera_motion_dict)
+                    execute_id, rule, camera_motion_dict, variable_context)
                 await self._log_rule_execution(execute_id, start_time, rule,
-                                               camera_motion_dict,
                                                condition_result_list,
+                                               trigger_images,
                                                execute_result)
 
         logger.info(
             "Scheduled task completed, checked %d trigger rules", len(enabled_rules)
         )
 
-    async def _log_rule_execution(
+    async def _store_trigger_images(
             self,
-            execute_id: str,
-            start_time: int,
-            rule: TriggerRule,
+            condition_result_list: list[TriggerConditionResult],
             camera_motion_dict: dict[str, dict[int,
                                            tuple[bool,
                                                  Optional[CameraImgSeq]]]],
-            condition_result_list: list[TriggerConditionResult],
-            execute_result: Optional[ExecuteResult] = None):
-        """Record rule trigger and execution logs, save to database"""
-        logger.info(
-            "Rule %s triggered, condition results: %s", rule.name, condition_result_list
-        )
-
+    ) -> list[CameraImgInfoPath]:
+        """Store trigger images and return list of image paths"""
+        all_images: list[CameraImgInfoPath] = []
         for condition_result in condition_result_list:
             is_motion, camera_img_seq = camera_motion_dict[condition_result.camera_info.did][condition_result.channel]
             if is_motion and condition_result.result and camera_img_seq:
                 path_seq: CameraImgPathSeq = await camera_img_seq.store_to_path()
                 condition_result.images = path_seq.img_list
+                all_images.extend(path_seq.img_list)
+        return all_images
+
+    async def _log_rule_execution(
+            self,
+            execute_id: str,
+            start_time: int,
+            rule: TriggerRule,
+            condition_result_list: list[TriggerConditionResult],
+            trigger_images: list[CameraImgInfoPath],
+            execute_result: Optional[ExecuteResult] = None):
+        """Record rule trigger and execution logs, save to database"""
+        logger.info(
+            "Rule %s triggered, condition results: %s, images count: %d",
+            rule.name, condition_result_list, len(trigger_images)
+        )
 
         trigger_rule_log = TriggerRuleLog(
             id=execute_id,
@@ -313,64 +334,77 @@ class TriggerRuleRunner:
 
                 cameras_video[camera_id, channel] = camera_img_seq
 
-        # Concurrently execute LLM calls for all cameras
-        tasks = []
-        for (camera_id, channel), camera_img_seq in cameras_video.items():
+        if not cameras_video:
+            return condition_result_list
+
+        try:
             messages = TriggerRuleConditionPromptBuilder.build_trigger_rule_prompt(
-                camera_img_seq, rule.condition, self._get_language())
-            task = self._call_vision_understaning(llm_proxy, messages.get_messages())
-            tasks.append(task)
+                list(cameras_video.values()), rule.condition, self._get_language())
+        except ValueError as exc:
+            logger.error(
+                "Failed to build trigger rule prompt for rule %s: %s", rule.name, exc)
+            # Treat as no LLM result, append default False below
+            messages = None
 
-        # Concurrently execute all tasks
-        responses = await asyncio.gather(*tasks, return_exceptions=True)
-
-        # Process results
-        for ((camera_id, channel),
-             camera_img_seq), response in zip(cameras_video.items(),
-                                              responses):
-            # Check for exceptions
-            if isinstance(response, Exception):
-                logger.error(
-                    "LLM call failed for camera %s channel %s: %s", camera_id, channel, response
-                )
-                continue
-
-            # Ensure response is dict type before accessing
-            if not isinstance(response, dict):
-                logger.error(
-                    "Invalid response type for camera %s channel %s: %s", camera_id, channel, type(response)
-                )
-                continue
-
-            content = response["content"]
-            logger.info(
-                "Condition result, rule name: %s, rule condition: %s, camera_id: %s, channel: %s, content: %s",
-                rule.name, rule.condition, camera_id, channel, content
-            )
-
-            if not content:
-                continue
-
+        llm_result_map: dict[tuple[str, int], bool] = {}
+        if messages:
             try:
-                # Use optimized helper method to extract JSON content
-                json_content = extract_json_from_content(content)
-                content_dict = json.loads(json_content)
-            except json.JSONDecodeError as e:
-                logger.error(
-                    "Failed to parse JSON content. Original: %s, Extracted: %s, Error: %s",
-                    content, json_content if "json_content" in locals() else "N/A", e)
-                continue
-            except Exception as e:  # pylint: disable=broad-except
-                logger.error(
-                    "Unexpected error while processing content: %s, Error: %s", content, e)
-                continue
+                response = await self._call_vision_understaning(llm_proxy, messages.get_messages())
+            except Exception as exc:  # pylint: disable=broad-except
+                logger.error("LLM call failed for rule %s: %s", rule.name, exc)
+                response = None
 
-            condition_result: TriggerConditionResult = TriggerConditionResult(
-                camera_info=camera_info_dict[camera_id],
-                channel=channel,
-                result=content_dict["result"] == "yes")
+            if isinstance(response, dict):
+                content = response.get("content")
+                logger.info(
+                    "Condition result, rule name: %s, condition: %s, content: %s",
+                    rule.name, rule.condition, content)
+                if content:
+                    try:
+                        json_content = extract_json_from_content(content)
+                        content_dict = json.loads(json_content)
+                        results = content_dict.get("results")
+                        if isinstance(results, list):
+                            for result_item in results:
+                                camera_id = result_item.get("camera_id")
+                                channel = result_item.get("channel")
+                                result_value = result_item.get("result")
+                                if camera_id is None or channel is None or result_value is None:
+                                    continue
+                                try:
+                                    channel_index = int(channel)
+                                except (TypeError, ValueError):
+                                    logger.warning(
+                                        "Invalid channel value in LLM result: %s", channel)
+                                    continue
+                                normalized = str(result_value).strip().lower()
+                                if normalized not in {"yes", "no"}:
+                                    logger.warning(
+                                        "Invalid result value in LLM result: %s", result_value)
+                                    continue
+                                llm_result_map[(camera_id, channel_index)] = normalized == "yes"
+                        else:
+                            logger.error(
+                                "Invalid results format in LLM response: %s", content_dict)
+                    except json.JSONDecodeError as e:
+                        logger.error(
+                            "Failed to parse JSON content. Original: %s, Extracted: %s, Error: %s",
+                            content, json_content if "json_content" in locals() else "N/A", e)
+                    except Exception as e:  # pylint: disable=broad-except
+                        logger.error(
+                            "Unexpected error while processing content: %s, Error: %s", content, e)
+                else:
+                    logger.error("LLM response content is empty: %s", response)
+            elif response is not None:
+                logger.error("Invalid LLM response type: %s", type(response))
 
-            condition_result_list.append(condition_result)
+        for camera_id, channel in cameras_video.keys():
+            condition_result_list.append(
+                TriggerConditionResult(
+                    camera_info=camera_info_dict[camera_id],
+                    channel=channel,
+                    result=llm_result_map.get((camera_id, channel), False)))
+
         return condition_result_list
 
     def _check_camera_motion(self, camera_img_seq: CameraImgSeq) -> bool:
@@ -384,7 +418,8 @@ class TriggerRuleRunner:
         self, execute_id: str, rule: TriggerRule,
         camera_motion_dict: dict[str, dict[int,
                                            tuple[bool,
-                                                 Optional[CameraImgSeq]]]]
+                                                 Optional[CameraImgSeq]]]],
+        variable_context: Optional[TriggerVariableContext] = None
     ) -> Optional[ExecuteResult]:
         """Execute trigger action"""
         logger.info("[%s] Executing trigger action: %s", execute_id, rule.name)
@@ -402,7 +437,7 @@ class TriggerRuleRunner:
         if execute_type == ExecuteType.STATIC and rule.execute_info.ai_recommend_actions:
             ai_recommend_action_execute_results = []
             for action in rule.execute_info.ai_recommend_actions:
-                result = await self.execute_action(action)
+                result = await self.execute_action(action, variable_context)
                 ai_recommend_action_execute_results.append(
                     ActionExecuteResult(action=action, result=result))
 
@@ -423,7 +458,7 @@ class TriggerRuleRunner:
         if rule.execute_info.automation_actions:
             automation_action_execute_results = []
             for action in rule.execute_info.automation_actions:
-                result = await self.execute_action(action)
+                result = await self.execute_action(action, variable_context)
                 automation_action_execute_results.append(
                     ActionExecuteResult(action=action, result=result))
 
@@ -470,14 +505,24 @@ class TriggerRuleRunner:
             actor_system.tell(trigger_rule_dynamic_executor, ActorExitRequest())
             trigger_rule_dynamic_executor_cache.pop(rule.id, None)
 
-    async def execute_action(self, action: Action) -> bool:
-        """Execute MCP action"""
+    async def execute_action(
+            self,
+            action: Action,
+            variable_context: Optional[TriggerVariableContext] = None
+    ) -> bool:
+        """Execute MCP action with variable substitution"""
         try:
             logger.info("Executing MCP action: %s on server %s", action.mcp_tool_name, action.mcp_server_name)
 
+            # Substitute variables in action input if context is provided
+            tool_input = action.mcp_tool_input
+            if variable_context:
+                tool_input = substitute_action_input(tool_input, variable_context)
+                logger.info("Action input after variable substitution: %s", tool_input)
+
             result: CallToolResult = await self._tool_executor.execute_tool_by_params(
                 action.mcp_client_id, action.mcp_tool_name,
-                action.mcp_tool_input)
+                tool_input)
 
             logger.info("MCP action executed successfully: %s, result: %s", action.mcp_tool_name, result)
             return result.success

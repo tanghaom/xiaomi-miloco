@@ -63,7 +63,7 @@ const RuleRecord = () => {
 
     if (isDynamic) {
       const actionElements = allResults.length > 0 ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', maxWidth: '100%' }}>
           {allResults.map((result, index) => {
             const statusIcon = result.success ? (
               <Icon name="toolCallSuccess" size={14} style={{ marginRight: 4 }} />
@@ -76,7 +76,17 @@ const RuleRecord = () => {
               : result.text;
 
             return (
-              <span key={index} style={{ display: 'flex', alignItems: 'center' }}>
+              <span
+                key={index}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  maxWidth: '100%',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis'
+                }}
+              >
                 {statusIcon}
                 {displayText}
                 <span>; </span>
@@ -88,12 +98,21 @@ const RuleRecord = () => {
 
       const { aiRecommendActionDescriptions = [] } = item;
 
-      const buttonText = aiRecommendActionDescriptions.length > 0
-        ? `${t('logManage.viewDynamicExecutionLogButtonText')}`
-        : '';
+      // Merge logic from both versions:
+      // If there are aiRecommendActionDescriptions, show the button with joined descriptions and buttonText2
+      // Otherwise, only the main buttonText
+      let buttonText = '';
+      if (aiRecommendActionDescriptions.length > 0) {
+        buttonText = `${t('logManage.viewDynamicExecutionLogButtonText')}`;
+        // See if buttonText2 exists
+        if (t('logManage.viewDynamicExecutionLogButtonText2', { defaultValue: '' })) {
+          // If that translation exists, append the joined descriptions and buttonText2
+          buttonText = `${buttonText} (${aiRecommendActionDescriptions.join('; ')}) ${t('logManage.viewDynamicExecutionLogButtonText2')}`;
+        }
+      }
 
       executionContent = (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', maxWidth: '100%' }}>
           {actionElements}
           {buttonText && (
             <Button
@@ -110,7 +129,7 @@ const RuleRecord = () => {
     } else {
       if (allResults.length > 0) {
         executionContent = (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', maxWidth: '100%' }}>
             {allResults.map((result, index) => {
               const statusIcon = result.success ? (
                 <Icon name="toolCallSuccess" size={14} style={{ marginRight: 4 }} />
@@ -123,7 +142,17 @@ const RuleRecord = () => {
                 : result.text;
 
               return (
-                <span key={index} style={{ display: 'flex', alignItems: 'center' }}>
+                <span
+                  key={index}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    maxWidth: '100%',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis'
+                  }}
+                >
                   {statusIcon}
                   {displayText}
                   <span>; </span>
@@ -138,9 +167,8 @@ const RuleRecord = () => {
     }
 
     return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ fontWeight: 500 }}>{triggerCondition}</span>
-        <span>→</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, maxWidth: '100%' }}>
+        {/* 不在列表中展示规则的完整触发条件，避免在窄屏设备上撑高每一行 */}
         {executionContent}
       </div>
     );

@@ -12,8 +12,11 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  width: 912px;
+  width: 100%;
+  max-width: 912px;
   margin: 0 auto;
+  /* 为大屏保留居中布局，小屏通过内部 padding 适配 */
+  padding: 0 var(--spacing-md);
 }
 
 .tabContainer {
@@ -33,5 +36,30 @@
 
   :global(.ant-tabs-tab-active) {
     font-weight: 500;
+  }
+}
+
+/* 移动端执行管理页面布局优化，避免横向滚动 */
+@media (max-width: 768px) {
+  .container {
+    padding-top: var(--spacing-md);
+  }
+
+  .wrapper {
+    align-items: stretch;
+    padding: 0 12px;
+  }
+
+  .tabs {
+    :global(.ant-tabs-nav) {
+      margin-bottom: 12px;
+    }
+
+    :global(.ant-tabs-tab) {
+      padding: 8px 12px;
+      font-size: 13px;
+      /* 允许 Tab 在窄屏下自动换行/收紧，减少挤压内容区 */
+      white-space: nowrap;
+    }
   }
 }

@@ -9,7 +9,10 @@
   height: 100%;
   padding: 22px 40px 20px 40px;
   width: 100%;
-  min-width: 550px;
+  /* 默认不再强制最小宽度，避免小屏设备横向溢出，通过最大宽度控制大屏阅读体验 */
+  max-width: 960px;
+  min-width: 0;
+  margin: 0 auto;
   position: relative;
 }
 .chatDialogHeader{
@@ -205,6 +208,35 @@
             color: var(--text-color);
           }
         }
+      }
+    }
+  }
+}
+
+/* 移动端聊天区域样式优化，避免横向滚动并让欢迎卡片自适应窄屏 */
+@media (max-width: 768px) {
+  .chatDialogWrap {
+    padding: 16px 12px 12px;
+  }
+
+  .messages {
+    padding: 0 8px;
+  }
+
+  .welcomeWrap {
+    /* 欢迎区域在移动端按内容高度自适应，避免被固定高度撑出滚动 */
+    height: auto;
+    min-height: calc(100vh - 220px);
+  }
+
+  .welcome {
+    width: 100%;
+    padding: 0 12px;
+
+    .featuresGrid {
+      .featureCard {
+        /* 卡片在窄屏下一列铺满，防止总宽度超出视口 */
+        width: 100%;
       }
     }
   }

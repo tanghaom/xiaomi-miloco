@@ -5,7 +5,6 @@
  
 .settingContainer {
   width: 100%;
-  padding: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -13,7 +12,9 @@
 }
 
 .settingContent {
-  width: 912px;
+  width: 100%;
+  max-width: 912px;
+  margin: 0 auto;
 }
 
 .settingTitle {
@@ -140,9 +141,51 @@
   gap: 6px;
   padding: 4px 8px;
   font-size: 14px;
-  width: 105px;
+  /* 默认给一点最小宽度，保证桌面端视觉统一 */
+  min-width: 90px;
 }
 
 .segmentedIcon {
   font-size: 14px;
+}
+
+/* 移动端设置页面布局优化，避免横向溢出并提升表单可读性 */
+@media (max-width: 768px) {
+  .settingContainer {
+    align-items: stretch;
+    padding-top: var(--spacing-md);
+  }
+
+  .settingContent {
+    width: 100%;
+    padding: 0 12px;
+  }
+
+  .settingCardItemList {
+    padding: 0 12px;
+  }
+
+  .settingItem {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .settingItem .settingLabel {
+    margin-bottom: 4px;
+  }
+
+  /* 语言选择、主题模式选择在移动端铺满一行，避免与标签挤在一行导致横向滚动 */
+  .settingItem :global(.ant-select),
+  .settingItem :global(.ant-segmented) {
+    width: 100% !important;
+  }
+
+  /* 移动端下主题模式分段选项自适应宽度，避免固定宽度导致横向滚动或内容被截断 */
+  .segmentedOption {
+    width: 100%;
+    min-width: 0;
+    justify-content: center;
+    font-size: 13px;
+  }
 }

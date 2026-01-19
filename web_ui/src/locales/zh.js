@@ -411,7 +411,8 @@ export default {
     pleaseLogin: '请登录您的账户',
     inputPin: '输入登录码 (6位)',
     login: '登录',
-
+    turnstileRequired: '请完成人机验证',
+    turnstileError: '验证失败，请重试',
 
     pinLength: '登录码必须是6位',
     pinNotMatch: '两次输入的登录码不一致',

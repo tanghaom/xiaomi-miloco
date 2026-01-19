@@ -32,6 +32,12 @@ from .auth_middleware import (
     ADMIN_USERNAME
 )
 
+from .rate_limiter import (
+    LoginRateLimiter,
+    get_rate_limiter,
+    get_client_ip_from_request
+)
+
 __all__ = [
     "BaseAPIException",
     "BusinessException",
@@ -55,5 +61,9 @@ __all__ = [
     "clear_auth_cookie",
     "invalidate_all_tokens",
     "is_token_valid",
-    "ADMIN_USERNAME"
+    "ADMIN_USERNAME",
+    # Rate limiting functions
+    "LoginRateLimiter",
+    "get_rate_limiter",
+    "get_client_ip_from_request"
 ]

@@ -21,6 +21,7 @@ class LoginRequest(BaseModel):
     """User login request model"""
     username: str = Field(..., description="Username")
     password: str = Field(..., description="Password")
+    turnstile_token: Optional[str] = Field(None, description="Cloudflare Turnstile token")
 
 
 class RegisterRequest(BaseModel):

@@ -145,7 +145,8 @@ class PromptConfig:
             language: User language, defaults to Chinese
             
         Returns:
-            Dictionary containing image_sequence_prefix, condition_question_template
+            Dictionary containing image_sequence_prefix, camera_sequence_header_template,
+            condition_question_template
         """
         return cls.TRIGGER_RULE_CONDITION_PREFIXES.get(
             language, cls.TRIGGER_RULE_CONDITION_PREFIXES[UserLanguage.CHINESE]

@@ -24,7 +24,18 @@ const Instant = () => {
   const { t } = useTranslation();
 
   const [currentPlayingId, setCurrentPlayingId] = useState([])
-  const [leftDrawerVisible, setLeftDrawerVisible] = useState(true)
+  /**
+   * 根据窗口宽度决定左侧设备列表的初始可见性：
+   * - 移动端：默认收起，通过右上角按钮打开
+   * - 桌面端：默认展开，方便同时查看设备和会话
+   */
+  const getInitialLeftVisible = () => {
+    if (typeof window === 'undefined') {
+      return true
+    }
+    return window.innerWidth >= 768
+  }
+  const [leftDrawerVisible, setLeftDrawerVisible] = useState(getInitialLeftVisible)
   const [rightDrawerVisible, setRightDrawerVisible] = useState(false)
 
   const {
@@ -47,8 +58,6 @@ const Instant = () => {
     fetchMcpServices()
   }, [])
 
-
-
   // play/close video
   const playStream = (item) => {
     if (!item) {return}
@@ -64,7 +73,7 @@ const Instant = () => {
 
   const handleClickHistory = async (id) => {
     // Stop current query if there is one in progress
-    if (isAnswering) {
+    if (isAnswering && globalCloseMessage) {
       globalCloseMessage();
     }
     await handleHistoryClick(id);
@@ -96,8 +105,6 @@ const Instant = () => {
         <div className={styles.chatDialogArea}>
           <ChatDialog />
         </div>
-
-
 
         {/* right history record area */}
         <div className={styles.rightSidebar} style={{ width: rightDrawerVisible ? '240px' : 0 }}>
@@ -140,7 +147,6 @@ const Instant = () => {
                       </div>
                     </Popconfirm>
                   </div>
-
                 ))
               )}
             </div>

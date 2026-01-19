@@ -13,7 +13,19 @@ import { SIDEBAR_WIDTH } from '@/constants/homeConfigTypes';
  */
 export const useSidebar = () => {
   const { EXPANDED, COLLAPSED, MIN, MAX } = SIDEBAR_WIDTH;
-  const [siderWidth, setSiderWidth] = useState(SIDEBAR_WIDTH.EXPANDED);
+  /**
+   * 根据当前窗口宽度决定侧边栏的初始宽度
+   * - 移动端（< 768px）：默认收起，仅展示图标，避免占用过多横向空间
+   * - 桌面端：保持展开状态
+   */
+  const getInitialWidth = () => {
+    if (typeof window === 'undefined') {
+      return SIDEBAR_WIDTH.EXPANDED;
+    }
+    return window.innerWidth < 768 ? SIDEBAR_WIDTH.COLLAPSED : SIDEBAR_WIDTH.EXPANDED;
+  };
+
+  const [siderWidth, setSiderWidth] = useState(getInitialWidth);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStartWidth, setDragStartWidth] = useState(SIDEBAR_WIDTH.EXPANDED);
   const [dragDirection, setDragDirection] = useState(null);

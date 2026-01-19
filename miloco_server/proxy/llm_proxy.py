@@ -83,9 +83,12 @@ class OpenAIProxy(LLMProxy):
         self.base_url = base_url
         self.api_key = api_key
 
+        # 注意：关闭 SDK 内置的自动重试（max_retries=0），避免 429 时多次重试
+        # 如果出现 429，则由上层业务直接跳过本次调用
         self.async_client = AsyncOpenAI(
             api_key=self.api_key,
-            base_url=self.base_url
+            base_url=self.base_url,
+            max_retries=0,
         )
         logger.info("LLM Proxy initialized with base_url: %s", self.base_url)
 
@@ -184,9 +187,11 @@ async def get_models_from_openai_compatible_api(base_url: str, api_key: str) -> 
     try:
         logger.info("Getting models from OpenAI compatible API: %s, api_key: %s", base_url, api_key)
 
+        # 同样关闭模型列表获取时的自动重试，防止 429 堵塞
         async_client = AsyncOpenAI(
             api_key=api_key,
-            base_url=base_url
+            base_url=base_url,
+            max_retries=0,
         )
 
         models = await async_client.models.list()

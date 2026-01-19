@@ -12,6 +12,7 @@ export const setInitPinCode = (data) => postApi('/api/auth/register', data);
 export const getPinLogin = (data) => postApi('/api/auth/login', data);
 export const setLanguage = (data) => postApi('/api/auth/language', data);
 export const getLanguage = () => getApi('/api/auth/language');
+export const getTurnstileConfig = () => getApi('/api/auth/turnstile-config');
 
 // miot API
 export const getUserLoginStatus = () => getApi('/api/miot/login_status');

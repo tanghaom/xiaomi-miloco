@@ -14,10 +14,14 @@
 }
 
 .content {
-  width: 915px;
+  /* 默认占满宽度，小屏下避免出现横向滚动；大屏通过 max-width 控制阅读宽度 */
+  width: 100%;
+  max-width: 915px;
   height: 100%;
   display: flex;
   flex-direction: column;
+  /* 为左右留出少量内边距，避免内容贴边 */
+  padding: 0 var(--spacing-md);
 }
 
 .headerContainer {

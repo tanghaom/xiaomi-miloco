@@ -60,6 +60,7 @@ SERVER_CONFIG = {
     "enable_file_logging": _config["server"]["enable_file_logging"],
     "ssl_certfile": CERT_DIR / "cert.pem",
     "ssl_keyfile": CERT_DIR / "key.pem",
+    "public_url": os.getenv("MILOCO_PUBLIC_URL", None) or _config["server"].get("public_url", ""),
 }
 
 # Application information configuration
@@ -109,4 +110,20 @@ CAMERA_CONFIG = {
 # MIoT dynamic configuration
 MIOT_CONFIG = {
     "cloud_server": _config["miot"]["cloud_server"],
+}
+
+# Rate limiting configuration (brute force protection)
+_rate_limit_config = _config.get("rate_limit", {})
+RATE_LIMIT_CONFIG = {
+    "max_failed_attempts": _rate_limit_config.get("max_failed_attempts", 5),
+    "block_duration_seconds": _rate_limit_config.get("block_duration_seconds", 900),
+    "attempt_window_seconds": _rate_limit_config.get("attempt_window_seconds", 600),
+}
+
+# Cloudflare Turnstile configuration (human verification)
+_turnstile_config = _config.get("turnstile", {})
+TURNSTILE_CONFIG = {
+    "enabled": _turnstile_config.get("enabled", False),
+    "site_key": os.getenv("TURNSTILE_SITE_KEY", None) or _turnstile_config.get("site_key", ""),
+    "secret_key": os.getenv("TURNSTILE_SECRET_KEY", None) or _turnstile_config.get("secret_key", ""),
 }

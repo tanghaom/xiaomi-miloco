@@ -40,6 +40,7 @@ services:
       - AI_ENGINE_HOST=${AI_ENGINE_HOST:-0.0.0.0}
       - AI_ENGINE_PORT=${AI_ENGINE_PORT:-8001}
       - BACKEND_LOG_LEVEL=${BACKEND_LOG_LEVEL:-info}
+      - MILOCO_PUBLIC_URL=${MILOCO_PUBLIC_URL:-}
       - TZ=${TZ:-Asia/Shanghai}
     volumes:
       - ./data:/app/miloco_server/.temp

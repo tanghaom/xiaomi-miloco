@@ -198,5 +198,30 @@
   align-items: center;
   height: 100%;
   min-width: 0;
+  /* 默认允许横向滚动以兼容桌面端较宽内容 */
   overflow-x: scroll;
 }
+
+/* 移动端即时聊天布局优化 */
+@media (max-width: 768px) {
+  .instantLayout {
+    /* 保持主布局为相对定位，侧栏使用覆盖方式叠加在聊天区域上 */
+    flex-direction: column;
+  }
+
+  .leftSidebar,
+  .rightSidebar {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    /* 使用覆盖方式显示在聊天区之上 */
+    background-color: var(--bg-color, #fff);
+  }
+
+  .chatDialogArea {
+    width: 100%;
+    /* 移动端优先避免横向滚动，内容尽量换行展示 */
+    overflow-x: hidden;
+  }
+}
+

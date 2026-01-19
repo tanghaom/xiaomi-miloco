@@ -14,6 +14,7 @@ from .chat_controller import router as chat_router
 from .trigger_controller import router as trigger_router
 from .model_controller import router as model_router
 from .mcp_controller import router as mcp_router
+from .public_controller import router as public_router
 
 __all__ = [
     "web_router",
@@ -24,4 +25,5 @@ __all__ = [
     "trigger_router",
     "model_router",
     "mcp_router",
+    "public_router",
 ]
