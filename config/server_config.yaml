@@ -19,10 +19,15 @@ database:
 # Server configuration
 server:
   host: "0.0.0.0"
-  port: 8000
+  port: 18000
   log_level: "info"
   enable_console_logging: true
   enable_file_logging: true
+  # Public URL for external access (e.g., for pushplus image links)
+  # Set this to your public accessible URL if you want to include images in push notifications
+  # Example: "https://your-domain.com:18000" or "https://your-ngrok-url.ngrok.io"
+  # Can be overridden by environment variable MILOCO_PUBLIC_URL
+  public_url: "https://xxxx"
 
 # Application information configuration
 app:
@@ -40,24 +45,39 @@ jwt:
 # Local model configuration
 local_model:
   host: "0.0.0.0"
-  port: 8001
+  port: 8111
 
 # Chat configuration
 chat:
   agent_max_steps: 10
   vision_use_img_count: 6
-  chat_history_ttl: 30 #days
+  chat_history_ttl: 1 #days
 
 # Trigger rule runner configuration
 trigger_rule_runner:
-  interval_seconds: 2
+  interval_seconds: 30
   vision_use_img_count: 6
-  trigger_rule_log_ttl: 30 #days
+  trigger_rule_log_ttl: 7 #days
 
 # Camera configuration
 camera:
-  frame_interval: 500 # Unit: Millisecond (ms)
+  frame_interval: 1500 # Unit: Millisecond (ms)
 
+
+# Login rate limiting configuration (brute force protection)
+# Blocks IP after too many failed login attempts
+rate_limit:
+  max_failed_attempts: 3           # Maximum failed login attempts before blocking
+  block_duration_seconds: 3600      # Block duration in seconds (default: 15 minutes)
+  attempt_window_seconds: 600      # Time window for counting failed attempts (default: 10 minutes)
+
+# Cloudflare Turnstile configuration (human verification)
+# Get your keys from: https://dash.cloudflare.com/?to=/:account/turnstile
+# Set enabled to true and fill in your keys to enable Turnstile protection
+turnstile:
+  enabled: true                    # Set to true to enable Turnstile verification
+  site_key: "0x4AAAAAACCxxxxxx"                      # Your Turnstile site key (public, used in frontend)
+  secret_key: "0x4AAAAAACCxxxxxx"                    # Your Turnstile secret key (private, used in backend)
 
 # MIoT configuration, default to 'cn', use your MiHome cloud server
   # 'cn': '中国大陆'
